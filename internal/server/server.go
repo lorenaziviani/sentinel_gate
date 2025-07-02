@@ -3,10 +3,12 @@ package server
 import (
 	"fmt"
 	"net/http"
+	"time"
 
 	"sentinel_gate/internal/auth"
 	"sentinel_gate/internal/middleware"
 	"sentinel_gate/internal/proxy"
+	"sentinel_gate/internal/ratelimiter"
 	"sentinel_gate/pkg/config"
 
 	"github.com/gin-gonic/gin"
@@ -15,10 +17,11 @@ import (
 
 // Server represents the HTTP server
 type Server struct {
-	config *config.Config
-	logger *zap.Logger
-	router *gin.Engine
-	proxy  *proxy.Proxy
+	config      *config.Config
+	logger      *zap.Logger
+	router      *gin.Engine
+	proxy       *proxy.Proxy
+	rateLimiter *middleware.EnhancedRateLimiter
 }
 
 // New creates a new server instance
@@ -32,11 +35,14 @@ func New(cfg *config.Config, logger *zap.Logger) (*Server, error) {
 		return nil, fmt.Errorf("failed to create proxy: %w", err)
 	}
 
+	rateLimiter := middleware.NewEnhancedRateLimiter(cfg, logger)
+
 	server := &Server{
-		config: cfg,
-		logger: logger,
-		router: gin.New(),
-		proxy:  proxyHandler,
+		config:      cfg,
+		logger:      logger,
+		router:      gin.New(),
+		proxy:       proxyHandler,
+		rateLimiter: rateLimiter,
 	}
 
 	server.setupMiddlewares()
@@ -64,7 +70,9 @@ func (s *Server) setupMiddlewares() {
 
 	s.router.Use(middleware.RequestID())
 
-	s.router.Use(middleware.RateLimit(s.config.RateLimit, s.logger))
+	s.router.Use(s.rateLimiter.RateLimitMiddleware())
+	s.router.Use(middleware.SetRequestIDInContext())
+	s.router.Use(middleware.SetAuthContextInRequest())
 }
 
 // setupRoutes configures the application routes
@@ -107,6 +115,12 @@ func (s *Server) setupRoutes() {
 
 		// Token validation test endpoint
 		testGroup.POST("/validate-token", middleware.JWTAuth(s.config.JWT, s.logger), s.testTokenValidation)
+
+		// Rate limiting test endpoints
+		testGroup.GET("/rate-limit", s.testRateLimit)
+		testGroup.GET("/rate-limit-auth", middleware.JWTAuth(s.config.JWT, s.logger), s.testRateLimitAuth)
+		testGroup.POST("/rate-limit-reset", s.testRateLimitReset)
+		testGroup.GET("/rate-limit-stats", s.testRateLimitStats)
 	}
 
 	// Main API routes (protected)
@@ -130,12 +144,17 @@ func (s *Server) healthCheck(c *gin.Context) {
 
 // readinessCheck endpoint for readiness check
 func (s *Server) readinessCheck(c *gin.Context) {
-	//  TODO: add more complex checks like Redis connectivity, database, etc.
-
 	checks := map[string]string{
 		"gateway": "ok",
-		"redis":   "ok", // TODO: implement real Redis check
 	}
+
+	// Check Redis connectivity
+	redisStatus := "ok"
+	if err := s.rateLimiter.GetRedisHealth(); err != nil {
+		redisStatus = fmt.Sprintf("error: %v", err)
+		s.logger.Warn("Redis health check failed", zap.Error(err))
+	}
+	checks["redis"] = redisStatus
 
 	allHealthy := true
 	for _, status := range checks {
@@ -249,5 +268,176 @@ func (s *Server) testTokenValidation(c *gin.Context) {
 			"preview":  middleware.MaskToken(token),
 		},
 		"request_id": c.GetString("request_id"),
+	})
+}
+
+// testRateLimit endpoint to test rate limiting
+func (s *Server) testRateLimit(c *gin.Context) {
+	clientIP := c.ClientIP()
+	requestID := c.GetString("request_id")
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":    "Rate limit test endpoint - successful request",
+		"client_ip":  clientIP,
+		"request_id": requestID,
+		"timestamp":  time.Now(),
+		"headers": gin.H{
+			"x-ratelimit-limit":     c.GetHeader("X-RateLimit-Limit"),
+			"x-ratelimit-remaining": c.GetHeader("X-RateLimit-Remaining"),
+			"x-ratelimit-reset":     c.GetHeader("X-RateLimit-Reset"),
+			"x-ratelimit-type":      c.GetHeader("X-RateLimit-Type"),
+		},
+	})
+}
+
+// testRateLimitAuth endpoint to test rate limiting with authentication
+func (s *Server) testRateLimitAuth(c *gin.Context) {
+	authCtx, exists := c.Get("auth")
+	if !exists {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "MISSING_AUTH_CONTEXT",
+			"message": "Authentication context not found",
+		})
+		return
+	}
+
+	auth := authCtx.(middleware.AuthContext)
+	clientIP := c.ClientIP()
+	requestID := c.GetString("request_id")
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":    "Authenticated rate limit test - successful request",
+		"client_ip":  clientIP,
+		"request_id": requestID,
+		"user": gin.H{
+			"id":       auth.UserID,
+			"username": auth.Username,
+			"role":     auth.Role,
+		},
+		"timestamp": time.Now(),
+		"headers": gin.H{
+			"x-ratelimit-limit":     c.GetHeader("X-RateLimit-Limit"),
+			"x-ratelimit-remaining": c.GetHeader("X-RateLimit-Remaining"),
+			"x-ratelimit-reset":     c.GetHeader("X-RateLimit-Reset"),
+			"x-ratelimit-type":      c.GetHeader("X-RateLimit-Type"),
+		},
+	})
+}
+
+// testRateLimitReset endpoint to reset rate limiting
+func (s *Server) testRateLimitReset(c *gin.Context) {
+	limitType := c.DefaultQuery("type", "ip")
+	identifier := c.DefaultQuery("identifier", "")
+
+	if identifier == "" {
+		if limitType == "ip" {
+			identifier = c.ClientIP()
+		} else {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "MISSING_IDENTIFIER",
+				"message": "Identifier is required for non-IP rate limit types",
+			})
+			return
+		}
+	}
+
+	var rateLimitType ratelimiter.RateLimitType
+	switch limitType {
+	case "ip":
+		rateLimitType = ratelimiter.RateLimitByIP
+	case "token":
+		rateLimitType = ratelimiter.RateLimitByToken
+	case "user":
+		rateLimitType = ratelimiter.RateLimitByUser
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "INVALID_TYPE",
+			"message": "Invalid rate limit type. Use: ip, token, or user",
+		})
+		return
+	}
+
+	err := s.rateLimiter.ResetRateLimit(rateLimitType, identifier)
+	if err != nil {
+		s.logger.Error("Failed to reset rate limit",
+			zap.Error(err),
+			zap.String("type", limitType),
+			zap.String("identifier", identifier),
+		)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "RESET_FAILED",
+			"message": "Failed to reset rate limit",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":    "Rate limit reset successfully",
+		"type":       limitType,
+		"identifier": identifier,
+		"timestamp":  time.Now(),
+	})
+}
+
+// testRateLimitStats endpoint to get rate limiting stats
+func (s *Server) testRateLimitStats(c *gin.Context) {
+	limitType := c.DefaultQuery("type", "ip")
+	identifier := c.DefaultQuery("identifier", "")
+
+	if identifier == "" {
+		if limitType == "ip" {
+			identifier = c.ClientIP()
+		} else {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "MISSING_IDENTIFIER",
+				"message": "Identifier is required for non-IP rate limit types",
+			})
+			return
+		}
+	}
+
+	var rateLimitType ratelimiter.RateLimitType
+	switch limitType {
+	case "ip":
+		rateLimitType = ratelimiter.RateLimitByIP
+	case "token":
+		rateLimitType = ratelimiter.RateLimitByToken
+	case "user":
+		rateLimitType = ratelimiter.RateLimitByUser
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "INVALID_TYPE",
+			"message": "Invalid rate limit type. Use: ip, token, or user",
+		})
+		return
+	}
+
+	stats, err := s.rateLimiter.GetRateLimitStats(rateLimitType, identifier)
+	if err != nil {
+		s.logger.Error("Failed to get rate limit stats",
+			zap.Error(err),
+			zap.String("type", limitType),
+			zap.String("identifier", identifier),
+		)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "STATS_FAILED",
+			"message": "Failed to get rate limit statistics",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":    "Rate limit statistics",
+		"type":       limitType,
+		"identifier": identifier,
+		"stats": gin.H{
+			"allowed":      stats.Allowed,
+			"remaining":    stats.Remaining,
+			"limit_value":  stats.LimitValue,
+			"reset_time":   stats.ResetTime,
+			"window_start": stats.WindowStart,
+			"window_end":   stats.WindowEnd,
+		},
+		"timestamp": time.Now(),
 	})
 }

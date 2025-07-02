@@ -1,0 +1,141 @@
+# Rate Limiting Rules Configuration
+# This file defines specific rate limiting rules for different routes and endpoints
+
+# Global default settings (fallback)
+global:
+  requests_per_minute: 100
+  burst_size: 10
+  window_size: "1m"
+  enabled: true
+
+# Route-specific rate limiting rules
+routes:
+  # Public endpoints - more generous limits
+  - path: "/health"
+    rules:
+      - type: "ip"
+        requests_per_minute: 60
+        burst_size: 5
+        window_size: "1m"
+        enabled: true
+
+  - path: "/metrics"
+    rules:
+      - type: "ip"
+        requests_per_minute: 30
+        burst_size: 5
+        window_size: "1m"
+        enabled: true
+
+  # Authentication endpoints - stricter limits
+  - path: "/auth/login"
+    rules:
+      - type: "ip"
+        requests_per_minute: 10
+        burst_size: 3
+        window_size: "1m"
+        enabled: true
+
+  - path: "/auth/refresh"
+    rules:
+      - type: "token"
+        requests_per_minute: 20
+        burst_size: 5
+        window_size: "1m"
+        enabled: true
+      - type: "ip"
+        requests_per_minute: 30
+        burst_size: 5
+        window_size: "1m"
+        enabled: true
+
+  - path: "/auth/logout"
+    rules:
+      - type: "token"
+        requests_per_minute: 10
+        burst_size: 2
+        window_size: "1m"
+        enabled: true
+
+  # Test endpoints - development limits
+  - path: "/test/*"
+    rules:
+      - type: "ip"
+        requests_per_minute: 50
+        burst_size: 10
+        window_size: "1m"
+        enabled: true
+      - type: "token"
+        requests_per_minute: 100
+        burst_size: 20
+        window_size: "1m"
+        enabled: true
+
+  # API proxy endpoints - per-user limits
+  - path: "/api/users/*"
+    rules:
+      - type: "token"
+        requests_per_minute: 60
+        burst_size: 10
+        window_size: "1m"
+        enabled: true
+      - type: "ip"
+        requests_per_minute: 100
+        burst_size: 15
+        window_size: "1m"
+        enabled: true
+
+  - path: "/api/orders/*"
+    rules:
+      - type: "token"
+        requests_per_minute: 30
+        burst_size: 5
+        window_size: "1m"
+        enabled: true
+      - type: "ip"
+        requests_per_minute: 50
+        burst_size: 8
+        window_size: "1m"
+        enabled: true
+
+  # Admin endpoints - very strict limits
+  - path: "/admin/*"
+    rules:
+      - type: "token"
+        requests_per_minute: 20
+        burst_size: 3
+        window_size: "1m"
+        enabled: true
+      - type: "ip"
+        requests_per_minute: 10
+        burst_size: 2
+        window_size: "1m"
+        enabled: true
+
+# Special configurations for different environments
+environments:
+  development:
+    multiplier: 10
+    enabled: false
+
+  staging:
+    multiplier: 3
+    enabled: true
+
+  production:
+    multiplier: 1
+    enabled: true
+
+# IP whitelist (bypass rate limiting)
+ip_whitelist:
+  - "127.0.0.1"
+  - "::1"
+  - "10.0.0.0/8"
+  - "172.16.0.0/12"
+  - "192.168.0.0/16"
+
+# User whitelist (bypass rate limiting for specific users)
+user_whitelist:
+  - "admin"
+  - "system"
+  - "health-check"

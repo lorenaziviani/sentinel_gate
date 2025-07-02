@@ -2,9 +2,13 @@ package config
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
 	"strconv"
+	"strings"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Config implements the configuration for the application
@@ -65,6 +69,50 @@ type RateLimitConfig struct {
 	BurstSize         int           `yaml:"burst_size"`
 	WindowSize        time.Duration `yaml:"window_size"`
 	CleanupInterval   time.Duration `yaml:"cleanup_interval"`
+	RedisHost         string        `yaml:"redis_host"`
+	RedisPort         string        `yaml:"redis_port"`
+	RedisPassword     string        `yaml:"redis_password"`
+	RedisDB           int           `yaml:"redis_db"`
+	RulesFile         string        `yaml:"rules_file"`
+}
+
+type RateLimitRules struct {
+	Global        GlobalRateLimit    `yaml:"global"`
+	Routes        []RouteRateLimit   `yaml:"routes"`
+	Environments  EnvironmentConfigs `yaml:"environments"`
+	IPWhitelist   []string           `yaml:"ip_whitelist"`
+	UserWhitelist []string           `yaml:"user_whitelist"`
+}
+
+type GlobalRateLimit struct {
+	RequestsPerMinute int    `yaml:"requests_per_minute"`
+	BurstSize         int    `yaml:"burst_size"`
+	WindowSize        string `yaml:"window_size"`
+	Enabled           bool   `yaml:"enabled"`
+}
+
+type RouteRateLimit struct {
+	Path  string          `yaml:"path"`
+	Rules []RateLimitRule `yaml:"rules"`
+}
+
+type RateLimitRule struct {
+	Type              string `yaml:"type"`
+	RequestsPerMinute int    `yaml:"requests_per_minute"`
+	BurstSize         int    `yaml:"burst_size"`
+	WindowSize        string `yaml:"window_size"`
+	Enabled           bool   `yaml:"enabled"`
+}
+
+type EnvironmentConfigs struct {
+	Development EnvironmentConfig `yaml:"development"`
+	Staging     EnvironmentConfig `yaml:"staging"`
+	Production  EnvironmentConfig `yaml:"production"`
+}
+
+type EnvironmentConfig struct {
+	Multiplier float64 `yaml:"multiplier"`
+	Enabled    bool    `yaml:"enabled"`
 }
 
 type CircuitBreakerConfig struct {
@@ -131,6 +179,11 @@ func Load() (*Config, error) {
 			BurstSize:         getIntEnv("RATE_LIMIT_BURST", 10),
 			WindowSize:        getDurationEnv("RATE_LIMIT_WINDOW", time.Minute),
 			CleanupInterval:   getDurationEnv("RATE_LIMIT_CLEANUP", 10*time.Minute),
+			RedisHost:         getEnv("REDIS_HOST", "localhost"),
+			RedisPort:         getEnv("REDIS_PORT", "6379"),
+			RedisPassword:     getEnv("REDIS_PASSWORD", ""),
+			RedisDB:           getIntEnv("REDIS_DB", 0),
+			RulesFile:         getEnv("RATE_LIMIT_RULES_FILE", "rules.yaml"),
 		},
 		CircuitBreaker: CircuitBreakerConfig{
 			MaxRequests: uint32(getIntEnv("CB_MAX_REQUESTS", 3)),
@@ -180,6 +233,80 @@ func (c *Config) Validate() error {
 	}
 
 	return nil
+}
+
+// LoadRateLimitRules loads rate limiting rules from YAML file
+func LoadRateLimitRules(filePath string) (*RateLimitRules, error) {
+	if filePath == "" {
+		filePath = "configs/rate-limit-rules.yaml"
+	}
+
+	data, err := ioutil.ReadFile(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read rate limit rules file %s: %w", filePath, err)
+	}
+
+	var rules RateLimitRules
+	if err := yaml.Unmarshal(data, &rules); err != nil {
+		return nil, fmt.Errorf("failed to parse rate limit rules: %w", err)
+	}
+
+	return &rules, nil
+}
+
+// GetEnvironmentConfig returns the rate limiting configuration for the current environment
+func (r *RateLimitRules) GetEnvironmentConfig(environment string) *EnvironmentConfig {
+	switch environment {
+	case "development":
+		return &r.Environments.Development
+	case "staging":
+		return &r.Environments.Staging
+	case "production":
+		return &r.Environments.Production
+	default:
+		return &r.Environments.Production
+	}
+}
+
+// IsIPWhitelisted checks if an IP address is in the whitelist
+func (r *RateLimitRules) IsIPWhitelisted(ip string) bool {
+	for _, whitelistedIP := range r.IPWhitelist {
+		if ip == whitelistedIP {
+			return true
+		}
+		// TODO: Add CIDR range support for IP whitelisting
+	}
+	return false
+}
+
+// IsUserWhitelisted checks if a user is in the whitelist
+func (r *RateLimitRules) IsUserWhitelisted(username string) bool {
+	for _, whitelistedUser := range r.UserWhitelist {
+		if username == whitelistedUser {
+			return true
+		}
+	}
+	return false
+}
+
+// FindRouteRules finds rate limiting rules for a specific route path
+func (r *RateLimitRules) FindRouteRules(path string) *RouteRateLimit {
+	for _, route := range r.Routes {
+		if r.matchPath(route.Path, path) {
+			return &route
+		}
+	}
+	return nil
+}
+
+// matchPath checks if a request path matches a route pattern (supports wildcards)
+func (r *RateLimitRules) matchPath(pattern, path string) bool {
+	// Simple wildcard matching - supports * at the end
+	if strings.HasSuffix(pattern, "*") {
+		prefix := strings.TrimSuffix(pattern, "*")
+		return strings.HasPrefix(path, prefix)
+	}
+	return pattern == path
 }
 
 // Helper functions to load environment variables
