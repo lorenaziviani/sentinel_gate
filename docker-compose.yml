@@ -1,0 +1,112 @@
+version: '3.8'
+
+services:
+  # API Gateway
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - ENVIRONMENT=development
+      - SERVER_PORT=:8080
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - JWT_SECRET=your-super-secret-jwt-key-with-at-least-32-characters-for-security
+      - JWT_EXPIRATION=24h
+      - JWT_REFRESH_TIME=168h
+      - RATE_LIMIT_RPM=100
+      - RATE_LIMIT_BURST=10
+      - TELEMETRY_ENABLED=true
+      - PROMETHEUS_PORT=:9090
+      - LOG_LEVEL=info
+      - TARGET_USERS_URL=http://user-service:3001
+      - TARGET_ORDERS_URL=http://order-service:3002
+    depends_on:
+      - redis
+      - prometheus
+    networks:
+      - sentinel-network
+
+  # Redis for rate limiting
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - sentinel-network
+
+  # Prometheus for metrics
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./configs/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - sentinel-network
+
+  # Grafana for visualization
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./configs/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./configs/grafana/datasources:/etc/grafana/provisioning/datasources
+    depends_on:
+      - prometheus
+    networks:
+      - sentinel-network
+
+  # Mock User Service for testing
+  user-service:
+    image: mockserver/mockserver:latest
+    ports:
+      - "3001:1080"
+    environment:
+      - MOCKSERVER_PROPERTY_FILE=/config/mockserver.properties
+      - MOCKSERVER_INITIALIZATION_JSON_PATH=/config/user-service-expectations.json
+    volumes:
+      - ./configs/mock-services/user-service-expectations.json:/config/user-service-expectations.json
+      - ./configs/mock-services/mockserver.properties:/config/mockserver.properties
+    networks:
+      - sentinel-network
+
+  # Mock Order Service for testing
+  order-service:
+    image: mockserver/mockserver:latest
+    ports:
+      - "3002:1080"
+    environment:
+      - MOCKSERVER_PROPERTY_FILE=/config/mockserver.properties
+      - MOCKSERVER_INITIALIZATION_JSON_PATH=/config/order-service-expectations.json
+    volumes:
+      - ./configs/mock-services/order-service-expectations.json:/config/order-service-expectations.json
+      - ./configs/mock-services/mockserver.properties:/config/mockserver.properties
+    networks:
+      - sentinel-network
+
+volumes:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  sentinel-network:
+    driver: bridge 
