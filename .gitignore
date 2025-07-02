@@ -21,6 +21,10 @@ go.work
 .env
 .env.local
 .env.*.local
+!.env.example
+!env.sample
+.gitconfig*
+git-switch.sh
 
 # IDE
 .vscode/
@@ -71,4 +75,32 @@ coverage.out
 
 # Air (live reload)
 .air.toml
-tmp/ 
+
+# Redis dumps
+dump.rdb
+
+# Certificate files
+*.pem
+*.crt
+*.key
+
+# Local database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Terraform files
+*.tfstate
+*.tfstate.*
+*.tfvars
+.terraform/
+
+# Kubernetes local files
+*.kubeconfig
+
+# Local development files
+local/
+dev/
+
+# Documentation build files
+site/ 

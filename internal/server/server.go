@@ -13,7 +13,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// Server representa o servidor HTTP
+// Server represents the HTTP server
 type Server struct {
 	config *config.Config
 	logger *zap.Logger
@@ -21,17 +21,15 @@ type Server struct {
 	proxy  *proxy.Proxy
 }
 
-// New cria uma nova instância do servidor
+// New creates a new server instance
 func New(cfg *config.Config, logger *zap.Logger) (*Server, error) {
-	// Configurar modo do Gin baseado no ambiente
 	if cfg.Environment == "production" {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	// Criar proxy para backend services
 	proxyHandler, err := proxy.New(cfg.Proxy, logger)
 	if err != nil {
-		return nil, fmt.Errorf("erro ao criar proxy: %w", err)
+		return nil, fmt.Errorf("failed to create proxy: %w", err)
 	}
 
 	server := &Server{
@@ -41,49 +39,38 @@ func New(cfg *config.Config, logger *zap.Logger) (*Server, error) {
 		proxy:  proxyHandler,
 	}
 
-	// Configurar middlewares e rotas
 	server.setupMiddlewares()
 	server.setupRoutes()
 
 	return server, nil
 }
 
-// Handler retorna o handler HTTP
+// Handler returns the HTTP handler
 func (s *Server) Handler() http.Handler {
 	return s.router
 }
 
-// setupMiddlewares configura os middlewares globais
+// setupMiddlewares configures the global middlewares
 func (s *Server) setupMiddlewares() {
-	// Recovery middleware
 	s.router.Use(gin.Recovery())
 
-	// CORS middleware
 	s.router.Use(middleware.CORS())
 
-	// Logger middleware
 	s.router.Use(middleware.Logger(s.logger))
 
-	// Metrics middleware
 	s.router.Use(middleware.Metrics())
 
-	// Request ID middleware
 	s.router.Use(middleware.RequestID())
 
-	// Rate limiting middleware
 	s.router.Use(middleware.RateLimit(s.config.RateLimit, s.logger))
 }
 
-// setupRoutes configura as rotas da aplicação
+// setupRoutes configures the application routes
 func (s *Server) setupRoutes() {
-	// Health check endpoint (sem autenticação)
 	s.router.GET("/health", s.healthCheck)
 	s.router.GET("/ready", s.readinessCheck)
-
-	// Metrics endpoint (sem autenticação)
 	s.router.GET("/metrics", gin.WrapH(http.DefaultServeMux))
 
-	// Auth endpoints
 	authGroup := s.router.Group("/auth")
 	{
 		authGroup.POST("/login", auth.Login(s.config.JWT, s.logger))
@@ -91,17 +78,16 @@ func (s *Server) setupRoutes() {
 		authGroup.POST("/logout", auth.Logout(s.logger))
 	}
 
-	// Protected routes - todas as rotas da API passam por aqui
 	api := s.router.Group("/api")
 	api.Use(middleware.JWTAuth(s.config.JWT, s.logger))
 	api.Use(middleware.CircuitBreaker(s.config.CircuitBreaker, s.logger))
 	{
-		// Proxy para todos os serviços backend
+		// Proxy for all backend services
 		api.Any("/*path", s.proxy.Handle)
 	}
 }
 
-// healthCheck endpoint para verificação de saúde
+// healthCheck endpoint for health check
 func (s *Server) healthCheck(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status":  "healthy",
@@ -110,14 +96,13 @@ func (s *Server) healthCheck(c *gin.Context) {
 	})
 }
 
-// readinessCheck endpoint para verificação de prontidão
+// readinessCheck endpoint for readiness check
 func (s *Server) readinessCheck(c *gin.Context) {
-	// Aqui você pode adicionar verificações mais complexas
-	// como conectividade com Redis, banco de dados, etc.
+	//  TODO: add more complex checks like Redis connectivity, database, etc.
 
 	checks := map[string]string{
 		"gateway": "ok",
-		"redis":   "ok", // TODO: implementar verificação real do Redis
+		"redis":   "ok", // TODO: implement real Redis check
 	}
 
 	allHealthy := true

@@ -15,7 +15,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// CORS middleware para permitir requisições cross-origin
+// CORS middleware to allow cross-origin requests
 func CORS() gin.HandlerFunc {
 	return gin.HandlerFunc(func(c *gin.Context) {
 		c.Header("Access-Control-Allow-Origin", "*")
@@ -32,7 +32,7 @@ func CORS() gin.HandlerFunc {
 	})
 }
 
-// Logger middleware para logging estruturado
+// Logger middleware for structured logging
 func Logger(logger *zap.Logger) gin.HandlerFunc {
 	return gin.LoggerWithConfig(gin.LoggerConfig{
 		Formatter: func(param gin.LogFormatterParams) string {
@@ -49,18 +49,16 @@ func Logger(logger *zap.Logger) gin.HandlerFunc {
 	})
 }
 
-// Metrics middleware para coletar métricas
+// Metrics middleware to collect metrics
 func Metrics() gin.HandlerFunc {
 	return gin.HandlerFunc(func(c *gin.Context) {
 		start := time.Now()
 
-		// Incrementar conexões ativas
 		telemetry.IncrementActiveConnections(c.Request.Context())
 		defer telemetry.DecrementActiveConnections(c.Request.Context())
 
 		c.Next()
 
-		// Registrar métricas após o processamento
 		duration := time.Since(start).Seconds()
 		status := strconv.Itoa(c.Writer.Status())
 
@@ -69,7 +67,7 @@ func Metrics() gin.HandlerFunc {
 	})
 }
 
-// RequestID middleware para adicionar ID único a cada requisição
+// RequestID middleware to add a unique ID to each request
 func RequestID() gin.HandlerFunc {
 	return gin.HandlerFunc(func(c *gin.Context) {
 		requestID := c.GetHeader("X-Request-ID")
@@ -83,7 +81,7 @@ func RequestID() gin.HandlerFunc {
 	})
 }
 
-// RateLimit middleware para controle de taxa
+// RateLimit middleware to control the rate
 func RateLimit(cfg config.RateLimitConfig, logger *zap.Logger) gin.HandlerFunc {
 	limiter := ratelimiter.New(cfg, logger)
 
@@ -110,7 +108,7 @@ func RateLimit(cfg config.RateLimitConfig, logger *zap.Logger) gin.HandlerFunc {
 	})
 }
 
-// JWTAuth middleware para autenticação JWT
+// JWTAuth middleware for JWT authentication
 func JWTAuth(cfg config.JWTConfig, logger *zap.Logger) gin.HandlerFunc {
 	return gin.HandlerFunc(func(c *gin.Context) {
 		tokenString := extractTokenFromHeader(c)
@@ -144,7 +142,6 @@ func JWTAuth(cfg config.JWTConfig, logger *zap.Logger) gin.HandlerFunc {
 		}
 
 		if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
-			// Verificar expiração
 			if exp, ok := claims["exp"].(float64); ok {
 				if time.Now().Unix() > int64(exp) {
 					c.JSON(401, gin.H{
@@ -156,7 +153,6 @@ func JWTAuth(cfg config.JWTConfig, logger *zap.Logger) gin.HandlerFunc {
 				}
 			}
 
-			// Adicionar claims ao contexto
 			c.Set("user_id", claims["user_id"])
 			c.Set("username", claims["username"])
 			c.Set("role", claims["role"])
@@ -173,17 +169,16 @@ func JWTAuth(cfg config.JWTConfig, logger *zap.Logger) gin.HandlerFunc {
 	})
 }
 
-// CircuitBreaker middleware para resiliência
+// CircuitBreaker middleware for resilience
 func CircuitBreaker(cfg config.CircuitBreakerConfig, logger *zap.Logger) gin.HandlerFunc {
-	// TODO: Implementar circuit breaker real com gobreaker
+	// TODO: Implement real circuit breaker with gobreaker
 	return gin.HandlerFunc(func(c *gin.Context) {
-		// Por enquanto, apenas passa adiante
-		// A implementação completa será feita nos próximos commits
+		// TODO: Implement real circuit breaker with gobreaker
 		c.Next()
 	})
 }
 
-// extractTokenFromHeader extrai o token JWT do header Authorization
+// extractTokenFromHeader extracts the JWT token from the Authorization header
 func extractTokenFromHeader(c *gin.Context) string {
 	bearerToken := c.GetHeader("Authorization")
 	if len(bearerToken) > 7 && bearerToken[:7] == "Bearer " {

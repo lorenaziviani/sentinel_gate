@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// Config representa a configuração completa da aplicação
+// Config implements the configuration for the application
 type Config struct {
 	Environment    string               `yaml:"environment"`
 	Server         ServerConfig         `yaml:"server"`
@@ -87,7 +87,7 @@ type TargetConfig struct {
 	HealthCheck string `yaml:"health_check"`
 }
 
-// Load carrega as configurações a partir de variáveis de ambiente
+// Load loads the configuration from environment variables
 func Load() (*Config, error) {
 	config := &Config{
 		Environment: getEnv("ENVIRONMENT", "development"),
@@ -159,30 +159,30 @@ func Load() (*Config, error) {
 	}
 
 	if err := config.Validate(); err != nil {
-		return nil, fmt.Errorf("configuração inválida: %w", err)
+		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
 
 	return config, nil
 }
 
-// Validate valida se as configurações estão corretas
+// Validate validates the configuration
 func (c *Config) Validate() error {
 	if c.JWT.Secret == "" {
-		return fmt.Errorf("JWT_SECRET é obrigatório")
+		return fmt.Errorf("JWT_SECRET is required")
 	}
 
 	if len(c.JWT.Secret) < 32 {
-		return fmt.Errorf("JWT_SECRET deve ter pelo menos 32 caracteres")
+		return fmt.Errorf("JWT_SECRET must be at least 32 characters long")
 	}
 
 	if c.Redis.Host == "" {
-		return fmt.Errorf("REDIS_HOST é obrigatório")
+		return fmt.Errorf("REDIS_HOST is required")
 	}
 
 	return nil
 }
 
-// Funções auxiliares para carregar variáveis de ambiente
+// Helper functions to load environment variables
 func getEnv(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
 		return value

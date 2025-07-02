@@ -2,32 +2,32 @@
 
 Um API Gateway robusto e performático desenvolvido em Go, oferecendo autenticação JWT, rate limiting com Redis, circuit breaker e observabilidade completa para arquiteturas de microserviços.
 
-## 🚀 Funcionalidades
+## Funcionalidades
 
 ### Segurança
 
-- ✅ **Autenticação JWT** - Tokens stateless com refresh automático
-- ✅ **Rate Limiting** - Proteção contra DDoS usando Redis
-- ✅ **CORS** - Configuração segura para requisições cross-origin
-- ✅ **Request Validation** - Validação de headers e payloads
+- **Autenticação JWT** - Tokens stateless com refresh automático
+- **Rate Limiting** - Proteção contra DDoS usando Redis
+- **CORS** - Configuração segura para requisições cross-origin
+- **Request Validation** - Validação de headers e payloads
 
 ### Performance & Resiliência
 
-- ✅ **Circuit Breaker** - Proteção contra falhas em cascata
-- ✅ **Reverse Proxy** - Roteamento inteligente para backends
-- ✅ **Health Checks** - Monitoramento contínuo dos serviços
-- ✅ **Graceful Shutdown** - Desligamento elegante sem perda de requisições
+- **Circuit Breaker** - Proteção contra falhas em cascata
+- **Reverse Proxy** - Roteamento inteligente para backends
+- **Health Checks** - Monitoramento contínuo dos serviços
+- **Graceful Shutdown** - Desligamento elegante sem perda de requisições
 
 ### Observabilidade
 
-- ✅ **Structured Logging** - Logs estruturados com Zap
-- ✅ **Metrics (Prometheus)** - Métricas detalhadas via OpenTelemetry
-- ✅ **Request Tracing** - Rastreamento completo de requisições
-- ✅ **Performance Monitoring** - Latência, throughput e taxa de erro
+- **Structured Logging** - Logs estruturados com Zap
+- **Metrics (Prometheus)** - Métricas detalhadas via OpenTelemetry
+- **Request Tracing** - Rastreamento completo de requisições
+- **Performance Monitoring** - Latência, throughput e taxa de erro
 
-## 🏗️ Arquitetura
+## Arquitetura
 
-![Diagrama de Arquitetura](docs/architecture.md)
+![Diagrama de Arquitetura](docs/architecture.drawio.png)
 
 ### Fluxo de Requisição
 
@@ -46,7 +46,7 @@ Cliente → CORS → Logger → Metrics → Rate Limit → JWT Auth → Circuit 
 7. **Circuit Breaker**: Verificação de saúde do backend
 8. **Proxy**: Roteamento para serviço backend apropriado
 
-## 🛠️ Stack Tecnológica
+## Stack Tecnológica
 
 - **Go 1.21** - Linguagem principal
 - **Gin Framework** - HTTP router de alta performance
@@ -57,18 +57,18 @@ Cliente → CORS → Logger → Metrics → Rate Limit → JWT Auth → Circuit 
 - **Zap** - Logging estruturado de alta performance
 - **Sony GoBreaker** - Implementação de circuit breaker
 
-## 📋 Pré-requisitos
+## Pré-requisitos
 
 - Go 1.21+
 - Redis 6.0+
 - Docker & Docker Compose (opcional)
 
-## 🚀 Instalação e Execução
+## Instalação e Execução
 
 ### 1. Clone o repositório
 
 ```bash
-git clone https://github.com/seu-usuario/sentinel_gate.git
+git clone https://github.com/lorenaziviani/sentinel_gate.git
 cd sentinel_gate
 ```
 
@@ -112,7 +112,7 @@ go build -o bin/gateway cmd/gateway/main.go
 docker-compose up -d
 ```
 
-## ⚙️ Configuração
+## Configuração
 
 O gateway é configurado através de variáveis de ambiente:
 
@@ -176,7 +176,7 @@ TARGET_USERS_URL=http://localhost:3001    # URL do serviço de usuários
 TARGET_ORDERS_URL=http://localhost:3002   # URL do serviço de pedidos
 ```
 
-## 📚 Uso da API
+## Uso da API
 
 ### 1. Autenticação
 
@@ -232,7 +232,7 @@ curl http://localhost:8080/ready
 curl http://localhost:8080/metrics
 ```
 
-## 📊 Monitoramento
+## Monitoramento
 
 ### Métricas Disponíveis
 
@@ -264,7 +264,7 @@ Todos os logs são estruturados em JSON para fácil parsing:
 }
 ```
 
-## 🧪 Testes
+## Testes
 
 ```bash
 # Executar todos os testes
@@ -280,7 +280,7 @@ go test -tags=integration ./...
 go test -bench=. ./...
 ```
 
-## 🏗️ Estrutura do Projeto
+## Estrutura do Projeto
 
 ```
 sentinel_gate/
@@ -303,7 +303,7 @@ sentinel_gate/
 └── README.md
 ```
 
-## 🔒 Segurança
+## Segurança
 
 ### Boas Práticas Implementadas
 
@@ -329,56 +329,7 @@ SERVER_READ_TIMEOUT=10s
 SERVER_WRITE_TIMEOUT=10s
 ```
 
-## 🚀 Deploy
-
-### Docker
-
-```bash
-# Build da imagem
-docker build -t sentinel-gate .
-
-# Executar container
-docker run -d \
-  --name sentinel-gate \
-  -p 8080:8080 \
-  -e JWT_SECRET=your-secret \
-  -e REDIS_HOST=redis \
-  sentinel-gate
-```
-
-### Kubernetes
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: sentinel-gate
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      app: sentinel-gate
-  template:
-    metadata:
-      labels:
-        app: sentinel-gate
-    spec:
-      containers:
-        - name: sentinel-gate
-          image: sentinel-gate:latest
-          ports:
-            - containerPort: 8080
-          env:
-            - name: JWT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: jwt-secret
-                  key: secret
-            - name: REDIS_HOST
-              value: "redis-service"
-```
-
-## 🤝 Contribuição
+## Contribuição
 
 1. Fork o projeto
 2. Crie uma branch para sua feature (`git checkout -b feature/AmazingFeature`)
@@ -386,7 +337,7 @@ spec:
 4. Push para a branch (`git push origin feature/AmazingFeature`)
 5. Abra um Pull Request
 
-## 📝 Roadmap
+## Roadmap
 
 ### Versão 1.1
 
@@ -409,20 +360,6 @@ spec:
 - [ ] Advanced analytics
 - [ ] Machine learning insights
 
-## 📄 Licença
+## Licença
 
 Este projeto está licenciado sob a MIT License - veja o arquivo [LICENSE](LICENSE) para detalhes.
-
-## 👥 Autores
-
-- **Seu Nome** - Desenvolvimento inicial - [@seu-github](https://github.com/seu-github)
-
-## 🙏 Agradecimentos
-
-- Comunidade Go pela excelente documentação
-- Mantenedores das bibliotecas utilizadas
-- Arquitetos de sistemas que inspiraram este design
-
----
-
-⭐ **Se este projeto foi útil para você, considere dar uma estrela!**

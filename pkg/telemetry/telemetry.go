@@ -5,14 +5,14 @@ import (
 	"sentinel_gate/pkg/config"
 )
 
-// Init inicializa a telemetria (versão simplificada)
+// Init initializes the telemetry (simplified version)
 func Init(cfg config.TelemetryConfig) (func(), error) {
 	if !cfg.Enabled {
 		return func() {}, nil
 	}
 
-	// TODO: Implementar OpenTelemetry completo nos próximos commits
-	// Por enquanto, apenas retorna um shutdown vazio
+	// TODO: Implement OpenTelemetry fully in the next commits
+	// For now, just return an empty shutdown
 
 	shutdown := func() {
 		// Graceful shutdown placeholder
@@ -21,23 +21,23 @@ func Init(cfg config.TelemetryConfig) (func(), error) {
 	return shutdown, nil
 }
 
-// Funções placeholder para métricas
+// Placeholder functions for metrics
 func IncrementRequestCounter(ctx context.Context, method, path, status string) {
-	// TODO: Implementar contador de requests
+	// TODO: Implement request counter
 }
 
 func RecordResponseTime(ctx context.Context, duration float64, method, path string) {
-	// TODO: Implementar histograma de tempo de resposta
+	// TODO: Implement response time histogram
 }
 
 func IncrementActiveConnections(ctx context.Context) {
-	// TODO: Implementar contador de conexões ativas
+	// TODO: Implement active connections counter
 }
 
 func DecrementActiveConnections(ctx context.Context) {
-	// TODO: Implementar contador de conexões ativas
+	// TODO: Implement active connections counter
 }
 
 func IncrementRateLimitExceeded(ctx context.Context, clientIP string) {
-	// TODO: Implementar contador de rate limit excedido
+	// TODO: Implement rate limit exceeded counter
 }

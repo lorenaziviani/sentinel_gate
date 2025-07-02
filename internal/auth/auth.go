@@ -11,13 +11,13 @@ import (
 	"go.uber.org/zap"
 )
 
-// LoginRequest representa os dados de login
+// LoginRequest represents the login request data
 type LoginRequest struct {
 	Username string `json:"username" binding:"required"`
 	Password string `json:"password" binding:"required"`
 }
 
-// LoginResponse representa a resposta do login
+// LoginResponse represents the login response data
 type LoginResponse struct {
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
@@ -25,12 +25,12 @@ type LoginResponse struct {
 	ExpiresIn    int64  `json:"expires_in"`
 }
 
-// RefreshRequest representa os dados para refresh do token
+// RefreshRequest represents the refresh token request data
 type RefreshRequest struct {
 	RefreshToken string `json:"refresh_token" binding:"required"`
 }
 
-// Claims representa os claims customizados do JWT
+// Claims represents the custom JWT claims
 type Claims struct {
 	UserID   string `json:"user_id"`
 	Username string `json:"username"`
@@ -38,7 +38,7 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
-// Login handler para autenticação de usuários
+// Login handler for user authentication
 func Login(cfg config.JWTConfig, logger *zap.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req LoginRequest
@@ -50,8 +50,7 @@ func Login(cfg config.JWTConfig, logger *zap.Logger) gin.HandlerFunc {
 			return
 		}
 
-		// TODO: Implementar verificação real de credenciais
-		// Por enquanto, aceita qualquer usuário/senha para demonstração
+		// TODO: Implement real credential verification
 		if req.Username == "" || req.Password == "" {
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"error":   "Invalid credentials",
@@ -60,17 +59,17 @@ func Login(cfg config.JWTConfig, logger *zap.Logger) gin.HandlerFunc {
 			return
 		}
 
-		// Simular verificação de credenciais
+		// Simulate credential verification
 		userID := "123"
 		role := "user"
 		if req.Username == "admin" {
 			role = "admin"
 		}
 
-		// Gerar tokens
+		// Generate tokens
 		accessToken, err := generateAccessToken(cfg, userID, req.Username, role)
 		if err != nil {
-			logger.Error("Erro ao gerar access token", zap.Error(err))
+			logger.Error("Error generating access token", zap.Error(err))
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error":   "Internal server error",
 				"message": "Could not generate access token",
@@ -80,7 +79,7 @@ func Login(cfg config.JWTConfig, logger *zap.Logger) gin.HandlerFunc {
 
 		refreshToken, err := generateRefreshToken(cfg, userID, req.Username, role)
 		if err != nil {
-			logger.Error("Erro ao gerar refresh token", zap.Error(err))
+			logger.Error("Error generating refresh token", zap.Error(err))
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error":   "Internal server error",
 				"message": "Could not generate refresh token",
@@ -103,7 +102,7 @@ func Login(cfg config.JWTConfig, logger *zap.Logger) gin.HandlerFunc {
 	}
 }
 
-// RefreshToken handler para renovação de tokens
+// RefreshToken handler for token refresh
 func RefreshToken(cfg config.JWTConfig, logger *zap.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req RefreshRequest
@@ -115,7 +114,6 @@ func RefreshToken(cfg config.JWTConfig, logger *zap.Logger) gin.HandlerFunc {
 			return
 		}
 
-		// Validar refresh token
 		token, err := jwt.ParseWithClaims(req.RefreshToken, &Claims{}, func(token *jwt.Token) (interface{}, error) {
 			return []byte(cfg.Secret), nil
 		})
@@ -129,10 +127,10 @@ func RefreshToken(cfg config.JWTConfig, logger *zap.Logger) gin.HandlerFunc {
 		}
 
 		if claims, ok := token.Claims.(*Claims); ok && token.Valid {
-			// Gerar novo access token
+			// Generate new access token
 			accessToken, err := generateAccessToken(cfg, claims.UserID, claims.Username, claims.Role)
 			if err != nil {
-				logger.Error("Erro ao gerar novo access token", zap.Error(err))
+				logger.Error("Error generating new access token", zap.Error(err))
 				c.JSON(http.StatusInternalServerError, gin.H{
 					"error":   "Internal server error",
 					"message": "Could not generate new access token",
@@ -147,7 +145,7 @@ func RefreshToken(cfg config.JWTConfig, logger *zap.Logger) gin.HandlerFunc {
 
 			c.JSON(http.StatusOK, LoginResponse{
 				AccessToken:  accessToken,
-				RefreshToken: req.RefreshToken, // Reutilizar o mesmo refresh token
+				RefreshToken: req.RefreshToken, // Reuse the same refresh token
 				TokenType:    "Bearer",
 				ExpiresIn:    int64(cfg.ExpirationTime.Seconds()),
 			})
@@ -160,11 +158,10 @@ func RefreshToken(cfg config.JWTConfig, logger *zap.Logger) gin.HandlerFunc {
 	}
 }
 
-// Logout handler para logout de usuários
+// Logout handler for user logout
 func Logout(logger *zap.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// TODO: Implementar blacklist de tokens se necessário
-		// Por enquanto, apenas log do logout
+		// TODO: Implement token blacklist if needed
 
 		userID, _ := c.Get("user_id")
 		username, _ := c.Get("username")
@@ -181,7 +178,7 @@ func Logout(logger *zap.Logger) gin.HandlerFunc {
 	}
 }
 
-// generateAccessToken gera um novo access token
+// generateAccessToken generates a new access token
 func generateAccessToken(cfg config.JWTConfig, userID, username, role string) (string, error) {
 	claims := Claims{
 		UserID:   userID,
@@ -200,7 +197,7 @@ func generateAccessToken(cfg config.JWTConfig, userID, username, role string) (s
 	return token.SignedString([]byte(cfg.Secret))
 }
 
-// generateRefreshToken gera um novo refresh token
+// generateRefreshToken generates a new refresh token
 func generateRefreshToken(cfg config.JWTConfig, userID, username, role string) (string, error) {
 	claims := Claims{
 		UserID:   userID,

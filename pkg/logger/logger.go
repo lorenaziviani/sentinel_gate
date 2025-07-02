@@ -5,11 +5,11 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-// NewLogger cria uma nova instância do logger configurado
+// NewLogger creates a new logger instance configured
 func NewLogger(level string) (*zap.Logger, error) {
 	config := zap.NewProductionConfig()
 
-	// Configurar nível de log
+	// Configure log level
 	switch level {
 	case "debug":
 		config.Level = zap.NewAtomicLevelAt(zapcore.DebugLevel)
@@ -23,7 +23,7 @@ func NewLogger(level string) (*zap.Logger, error) {
 		config.Level = zap.NewAtomicLevelAt(zapcore.InfoLevel)
 	}
 
-	// Configurações de encoding para produção
+	// Production encoding configurations
 	config.EncoderConfig.TimeKey = "timestamp"
 	config.EncoderConfig.CallerKey = "caller"
 	config.EncoderConfig.MessageKey = "message"
@@ -32,7 +32,7 @@ func NewLogger(level string) (*zap.Logger, error) {
 	config.EncoderConfig.EncodeLevel = zapcore.CapitalLevelEncoder
 	config.EncoderConfig.EncodeCaller = zapcore.ShortCallerEncoder
 
-	// Construir o logger
+	// Build the logger
 	logger, err := config.Build(
 		zap.AddCaller(),
 		zap.AddCallerSkip(1),
@@ -45,7 +45,7 @@ func NewLogger(level string) (*zap.Logger, error) {
 	return logger, nil
 }
 
-// NewDevelopmentLogger cria um logger para desenvolvimento
+// NewDevelopmentLogger creates a logger for development
 func NewDevelopmentLogger() (*zap.Logger, error) {
 	config := zap.NewDevelopmentConfig()
 	config.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
