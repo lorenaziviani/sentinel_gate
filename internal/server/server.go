@@ -3,9 +3,11 @@ package server
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"sentinel_gate/internal/auth"
+	"sentinel_gate/internal/circuitbreaker"
 	"sentinel_gate/internal/middleware"
 	"sentinel_gate/internal/proxy"
 	"sentinel_gate/internal/ratelimiter"
@@ -17,11 +19,12 @@ import (
 
 // Server represents the HTTP server
 type Server struct {
-	config      *config.Config
-	logger      *zap.Logger
-	router      *gin.Engine
-	proxy       *proxy.Proxy
-	rateLimiter *middleware.EnhancedRateLimiter
+	config         *config.Config
+	logger         *zap.Logger
+	router         *gin.Engine
+	proxy          *proxy.Proxy
+	rateLimiter    *middleware.EnhancedRateLimiter
+	circuitBreaker *circuitbreaker.CircuitBreakerManager
 }
 
 // New creates a new server instance
@@ -30,7 +33,9 @@ func New(cfg *config.Config, logger *zap.Logger) (*Server, error) {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	proxyHandler, err := proxy.New(cfg.Proxy, logger)
+	circuitBreakerManager := circuitbreaker.NewCircuitBreakerManager(cfg.CircuitBreaker, logger)
+
+	proxyHandler, err := proxy.New(cfg.Proxy, circuitBreakerManager, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create proxy: %w", err)
 	}
@@ -38,11 +43,12 @@ func New(cfg *config.Config, logger *zap.Logger) (*Server, error) {
 	rateLimiter := middleware.NewEnhancedRateLimiter(cfg, logger)
 
 	server := &Server{
-		config:      cfg,
-		logger:      logger,
-		router:      gin.New(),
-		proxy:       proxyHandler,
-		rateLimiter: rateLimiter,
+		config:         cfg,
+		logger:         logger,
+		router:         gin.New(),
+		proxy:          proxyHandler,
+		rateLimiter:    rateLimiter,
+		circuitBreaker: circuitBreakerManager,
 	}
 
 	server.setupMiddlewares()
@@ -90,6 +96,17 @@ func (s *Server) setupRoutes() {
 		authGroup.POST("/logout", middleware.JWTAuth(s.config.JWT, s.logger), auth.Logout(s.logger))
 	}
 
+	// Admin routes for circuit breaker management
+	adminGroup := s.router.Group("/admin")
+	adminGroup.Use(middleware.JWTAuth(s.config.JWT, s.logger))
+	adminGroup.Use(middleware.RequireRole("admin"))
+	{
+		// Circuit breaker endpoints
+		adminGroup.GET("/circuit-breaker/status", s.getCircuitBreakerStatus)
+		adminGroup.GET("/circuit-breaker/metrics", s.getCircuitBreakerMetrics)
+		adminGroup.POST("/circuit-breaker/reset/:service", s.resetCircuitBreaker)
+	}
+
 	// Test routes for JWT validation
 	testGroup := s.router.Group("/test")
 	{
@@ -121,12 +138,15 @@ func (s *Server) setupRoutes() {
 		testGroup.GET("/rate-limit-auth", middleware.JWTAuth(s.config.JWT, s.logger), s.testRateLimitAuth)
 		testGroup.POST("/rate-limit-reset", s.testRateLimitReset)
 		testGroup.GET("/rate-limit-stats", s.testRateLimitStats)
+
+		// Circuit breaker test endpoints
+		testGroup.GET("/circuit-breaker", s.testCircuitBreaker)
+		testGroup.POST("/force-failure/:service", s.testForceFailure)
 	}
 
 	// Main API routes (protected)
 	api := s.router.Group("/api")
 	api.Use(middleware.JWTAuth(s.config.JWT, s.logger))
-	api.Use(middleware.CircuitBreaker(s.config.CircuitBreaker, s.logger))
 	{
 		// Proxy for all backend services
 		api.Any("/*path", s.proxy.Handle)
@@ -135,11 +155,17 @@ func (s *Server) setupRoutes() {
 
 // healthCheck endpoint for health check
 func (s *Server) healthCheck(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{
-		"status":  "healthy",
-		"service": "sentinel-gate",
-		"version": "1.0.0",
-	})
+	// Include circuit breaker health in the response
+	cbHealth := s.circuitBreaker.HealthCheck()
+
+	response := gin.H{
+		"status":          "healthy",
+		"service":         "sentinel-gate",
+		"version":         "1.0.0",
+		"circuit_breaker": cbHealth,
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 // readinessCheck endpoint for readiness check
@@ -156,9 +182,26 @@ func (s *Server) readinessCheck(c *gin.Context) {
 	}
 	checks["redis"] = redisStatus
 
+	// Check circuit breaker health
+	cbHealth := s.circuitBreaker.HealthCheck()
+	checks["circuit_breaker"] = "ok"
+	if cbCount, ok := cbHealth["circuit_breakers_count"].(int); ok && cbCount > 0 {
+		// Check if any circuit breakers are in OPEN state
+		if cbStates, ok := cbHealth["circuit_breakers"].(map[string]interface{}); ok {
+			for service, state := range cbStates {
+				if stateMap, ok := state.(map[string]interface{}); ok {
+					if stateStr, ok := stateMap["state"].(string); ok && stateStr == "OPEN" {
+						checks["circuit_breaker"] = fmt.Sprintf("warning: %s circuit is OPEN", service)
+						break
+					}
+				}
+			}
+		}
+	}
+
 	allHealthy := true
 	for _, status := range checks {
-		if status != "ok" {
+		if !strings.HasPrefix(status, "ok") && !strings.HasPrefix(status, "warning") {
 			allHealthy = false
 			break
 		}
@@ -175,6 +218,99 @@ func (s *Server) readinessCheck(c *gin.Context) {
 			"checks": checks,
 		},
 	})
+}
+
+// getCircuitBreakerStatus returns the status of all circuit breakers
+func (s *Server) getCircuitBreakerStatus(c *gin.Context) {
+	states := s.proxy.GetCircuitBreakerStates()
+
+	c.JSON(http.StatusOK, gin.H{
+		"circuit_breakers": states,
+		"timestamp":        time.Now().UTC(),
+	})
+}
+
+// getCircuitBreakerMetrics returns circuit breaker metrics
+func (s *Server) getCircuitBreakerMetrics(c *gin.Context) {
+	metrics := s.proxy.GetCircuitBreakerMetrics()
+
+	c.JSON(http.StatusOK, gin.H{
+		"metrics":   metrics,
+		"timestamp": time.Now().UTC(),
+	})
+}
+
+// resetCircuitBreaker resets a specific circuit breaker
+func (s *Server) resetCircuitBreaker(c *gin.Context) {
+	serviceName := c.Param("service")
+	if serviceName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Missing service name",
+			"message": "Service name is required in the URL path",
+		})
+		return
+	}
+
+	s.proxy.ResetCircuitBreaker(serviceName)
+
+	s.logger.Info("Circuit breaker reset via admin endpoint",
+		zap.String("service", serviceName),
+		zap.String("admin_user", c.GetString("username")),
+	)
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":    fmt.Sprintf("Circuit breaker for service '%s' has been reset", serviceName),
+		"service":    serviceName,
+		"reset_by":   c.GetString("username"),
+		"reset_time": time.Now().UTC(),
+	})
+}
+
+// testCircuitBreaker tests circuit breaker functionality
+func (s *Server) testCircuitBreaker(c *gin.Context) {
+	states := s.proxy.GetCircuitBreakerStates()
+	metrics := s.proxy.GetCircuitBreakerMetrics()
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":        "Circuit breaker test endpoint",
+		"states":         states,
+		"metrics":        metrics,
+		"config_enabled": s.config.CircuitBreaker.Enabled,
+		"config_settings": gin.H{
+			"max_requests":      s.config.CircuitBreaker.MaxRequests,
+			"min_requests":      s.config.CircuitBreaker.MinRequests,
+			"failure_threshold": s.config.CircuitBreaker.FailureThreshold,
+			"interval":          s.config.CircuitBreaker.Interval.String(),
+			"timeout":           s.config.CircuitBreaker.Timeout.String(),
+		},
+		"timestamp": time.Now().UTC(),
+	})
+}
+
+// testForceFailure simulates a service failure for testing circuit breaker
+func (s *Server) testForceFailure(c *gin.Context) {
+	serviceName := c.Param("service")
+	if serviceName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Missing service name",
+			"message": "Service name is required in the URL path",
+		})
+		return
+	}
+
+	// This is a test endpoint that simulates failures
+	// In a real scenario, this would trigger actual failures in the service
+	c.JSON(http.StatusInternalServerError, gin.H{
+		"error":     "Simulated failure",
+		"message":   fmt.Sprintf("Simulated failure for service '%s' to test circuit breaker", serviceName),
+		"service":   serviceName,
+		"timestamp": time.Now().UTC(),
+	})
+
+	s.logger.Warn("Simulated service failure for circuit breaker testing",
+		zap.String("service", serviceName),
+		zap.String("client_ip", c.ClientIP()),
+	)
 }
 
 // testPublic endpoint to test public access
@@ -199,18 +335,12 @@ func (s *Server) testProtected(c *gin.Context) {
 		return
 	}
 
-	auth := authCtx.(middleware.AuthContext)
-
 	c.JSON(http.StatusOK, gin.H{
-		"message": "This is a protected endpoint",
-		"user": gin.H{
-			"id":       auth.UserID,
-			"username": auth.Username,
-			"role":     auth.Role,
-			"email":    auth.Email,
-		},
-		"token_id":   auth.TokenID,
+		"message":    "This is a protected endpoint",
+		"accessible": "only with valid JWT token",
+		"auth_info":  authCtx,
 		"request_id": c.GetString("request_id"),
+		"timestamp":  time.Now(),
 	})
 }
 

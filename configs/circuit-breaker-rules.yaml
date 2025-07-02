@@ -1,0 +1,94 @@
+# Circuit Breaker Configuration
+# Configuração de circuit breakers por serviço
+
+global:
+  enabled: true
+  max_requests: 3
+  min_requests: 5
+  failure_threshold: 0.6
+  interval: "60s"
+  timeout: "60s"
+
+services:
+  - name: "api-users"
+    max_requests: 3
+    min_requests: 5
+    failure_threshold: 0.6
+    interval: "60s"
+    timeout: "60s"
+    enabled: true
+
+  - name: "api-orders"
+    max_requests: 5
+    min_requests: 10
+    failure_threshold: 0.5
+    interval: "90s"
+    timeout: "90s"
+    enabled: true
+
+  - name: "api-payments"
+    max_requests: 2
+    min_requests: 3
+    failure_threshold: 0.7
+    interval: "30s"
+    timeout: "30s"
+    enabled: true
+
+  - name: "api-notifications"
+    max_requests: 10
+    min_requests: 20
+    failure_threshold: 0.4
+    interval: "120s"
+    timeout: "120s"
+    enabled: true
+
+environments:
+  development:
+    multiplier: 2.0 # 2x more tolerant in dev
+    enabled: true
+
+  staging:
+    multiplier: 1.5 # 1.5x more tolerant in staging
+    enabled: true
+
+  production:
+    multiplier: 1.0 # Normal thresholds in production
+    enabled: true
+
+# Service-specific overrides for different environments
+environment_overrides:
+  development:
+    api-users:
+      failure_threshold: 0.8 # More tolerant for users service in dev
+
+  staging:
+    api-payments:
+      failure_threshold: 0.8 # More tolerant for payments in staging
+      timeout: "45s"
+
+  production:
+    api-payments:
+      failure_threshold: 0.5 # Stricter for payments in prod
+      min_requests: 2
+      timeout: "30s"
+
+# Fallback configurations
+fallback:
+  default_message: "Service temporarily unavailable"
+  default_retry_after: 60
+  include_service_name: true
+  include_circuit_state: true
+
+# Logging configuration
+logging:
+  log_state_changes: true
+  log_failures: true
+  log_recoveries: true
+  log_fallbacks: true
+
+# Metrics configuration
+metrics:
+  enabled: true
+  include_service_name: true
+  include_state: true
+  track_recovery_time: true

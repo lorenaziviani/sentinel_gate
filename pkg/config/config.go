@@ -116,10 +116,12 @@ type EnvironmentConfig struct {
 }
 
 type CircuitBreakerConfig struct {
-	MaxRequests uint32        `yaml:"max_requests"`
-	Interval    time.Duration `yaml:"interval"`
-	Timeout     time.Duration `yaml:"timeout"`
-	ReadyToTrip int           `yaml:"ready_to_trip"`
+	MaxRequests      uint32        `yaml:"max_requests"`
+	MinRequests      int           `yaml:"min_requests"`
+	FailureThreshold float64       `yaml:"failure_threshold"`
+	Interval         time.Duration `yaml:"interval"`
+	Timeout          time.Duration `yaml:"timeout"`
+	Enabled          bool          `yaml:"enabled"`
 }
 
 type ProxyConfig struct {
@@ -186,10 +188,12 @@ func Load() (*Config, error) {
 			RulesFile:         getEnv("RATE_LIMIT_RULES_FILE", "rules.yaml"),
 		},
 		CircuitBreaker: CircuitBreakerConfig{
-			MaxRequests: uint32(getIntEnv("CB_MAX_REQUESTS", 3)),
-			Interval:    getDurationEnv("CB_INTERVAL", 60*time.Second),
-			Timeout:     getDurationEnv("CB_TIMEOUT", 60*time.Second),
-			ReadyToTrip: getIntEnv("CB_READY_TO_TRIP", 5),
+			MaxRequests:      uint32(getIntEnv("CB_MAX_REQUESTS", 3)),
+			MinRequests:      getIntEnv("CB_MIN_REQUESTS", 5),
+			FailureThreshold: getFloatEnv("CB_FAILURE_THRESHOLD", 0.6),
+			Interval:         getDurationEnv("CB_INTERVAL", 60*time.Second),
+			Timeout:          getDurationEnv("CB_TIMEOUT", 60*time.Second),
+			Enabled:          getBoolEnv("CB_ENABLED", true),
 		},
 		Proxy: ProxyConfig{
 			DefaultTimeout:  getDurationEnv("PROXY_DEFAULT_TIMEOUT", 30*time.Second),
@@ -330,6 +334,15 @@ func getBoolEnv(key string, defaultValue bool) bool {
 	if value := os.Getenv(key); value != "" {
 		if boolValue, err := strconv.ParseBool(value); err == nil {
 			return boolValue
+		}
+	}
+	return defaultValue
+}
+
+func getFloatEnv(key string, defaultValue float64) float64 {
+	if value := os.Getenv(key); value != "" {
+		if floatValue, err := strconv.ParseFloat(value, 64); err == nil {
+			return floatValue
 		}
 	}
 	return defaultValue
