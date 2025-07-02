@@ -58,6 +58,8 @@ func (s *Server) setupMiddlewares() {
 
 	s.router.Use(middleware.Logger(s.logger))
 
+	s.router.Use(middleware.DetailedLogger(s.logger))
+
 	s.router.Use(middleware.Metrics())
 
 	s.router.Use(middleware.RequestID())
@@ -67,17 +69,47 @@ func (s *Server) setupMiddlewares() {
 
 // setupRoutes configures the application routes
 func (s *Server) setupRoutes() {
+	// Public routes (no authentication required)
 	s.router.GET("/health", s.healthCheck)
 	s.router.GET("/ready", s.readinessCheck)
 	s.router.GET("/metrics", gin.WrapH(http.DefaultServeMux))
 
+	// Authentication routes
 	authGroup := s.router.Group("/auth")
 	{
 		authGroup.POST("/login", auth.Login(s.config.JWT, s.logger))
 		authGroup.POST("/refresh", auth.RefreshToken(s.config.JWT, s.logger))
-		authGroup.POST("/logout", auth.Logout(s.logger))
+		authGroup.POST("/logout", middleware.JWTAuth(s.config.JWT, s.logger), auth.Logout(s.logger))
 	}
 
+	// Test routes for JWT validation
+	testGroup := s.router.Group("/test")
+	{
+		// Public test endpoint
+		testGroup.GET("/public", s.testPublic)
+
+		// Protected test endpoint (any authenticated user)
+		testGroup.GET("/protected", middleware.JWTAuth(s.config.JWT, s.logger), s.testProtected)
+
+		// Admin only test endpoint
+		testGroup.GET("/admin",
+			middleware.JWTAuth(s.config.JWT, s.logger),
+			middleware.RequireRole("admin"),
+			s.testAdmin,
+		)
+
+		// User role test endpoint
+		testGroup.GET("/user",
+			middleware.JWTAuth(s.config.JWT, s.logger),
+			middleware.RequireRole("user", "admin"),
+			s.testUser,
+		)
+
+		// Token validation test endpoint
+		testGroup.POST("/validate-token", middleware.JWTAuth(s.config.JWT, s.logger), s.testTokenValidation)
+	}
+
+	// Main API routes (protected)
 	api := s.router.Group("/api")
 	api.Use(middleware.JWTAuth(s.config.JWT, s.logger))
 	api.Use(middleware.CircuitBreaker(s.config.CircuitBreaker, s.logger))
@@ -123,5 +155,99 @@ func (s *Server) readinessCheck(c *gin.Context) {
 			"ready":  allHealthy,
 			"checks": checks,
 		},
+	})
+}
+
+// testPublic endpoint to test public access
+func (s *Server) testPublic(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"message":    "This is a public endpoint",
+		"accessible": "without authentication",
+		"timestamp":  gin.H{"iso": "2023-01-01T00:00:00Z"},
+		"request_id": c.GetString("request_id"),
+	})
+}
+
+// testProtected endpoint to test JWT protection
+func (s *Server) testProtected(c *gin.Context) {
+	authCtx, exists := c.Get("auth")
+	if !exists {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":      "MISSING_AUTH_CONTEXT",
+			"message":    "Authentication context not found",
+			"request_id": c.GetString("request_id"),
+		})
+		return
+	}
+
+	auth := authCtx.(middleware.AuthContext)
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "This is a protected endpoint",
+		"user": gin.H{
+			"id":       auth.UserID,
+			"username": auth.Username,
+			"role":     auth.Role,
+			"email":    auth.Email,
+		},
+		"token_id":   auth.TokenID,
+		"request_id": c.GetString("request_id"),
+	})
+}
+
+// testAdmin endpoint to test admin role protection
+func (s *Server) testAdmin(c *gin.Context) {
+	authCtx, _ := c.Get("auth")
+	auth := authCtx.(middleware.AuthContext)
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "This is an admin-only endpoint",
+		"user": gin.H{
+			"id":       auth.UserID,
+			"username": auth.Username,
+			"role":     auth.Role,
+		},
+		"privileges": []string{"read", "write", "delete", "admin"},
+		"request_id": c.GetString("request_id"),
+	})
+}
+
+// testUser endpoint to test user role protection
+func (s *Server) testUser(c *gin.Context) {
+	authCtx, _ := c.Get("auth")
+	auth := authCtx.(middleware.AuthContext)
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "This endpoint is accessible by users and admins",
+		"user": gin.H{
+			"id":       auth.UserID,
+			"username": auth.Username,
+			"role":     auth.Role,
+		},
+		"privileges": []string{"read", "write"},
+		"request_id": c.GetString("request_id"),
+	})
+}
+
+// testTokenValidation endpoint to validate and inspect current token
+func (s *Server) testTokenValidation(c *gin.Context) {
+	authCtx, _ := c.Get("auth")
+	auth := authCtx.(middleware.AuthContext)
+
+	// Extract token for inspection
+	token := middleware.ExtractTokenFromHeader(c)
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Token validation successful",
+		"token": gin.H{
+			"valid":    true,
+			"user_id":  auth.UserID,
+			"username": auth.Username,
+			"role":     auth.Role,
+			"email":    auth.Email,
+			"token_id": auth.TokenID,
+			"preview":  middleware.MaskToken(token),
+		},
+		"request_id": c.GetString("request_id"),
 	})
 }
