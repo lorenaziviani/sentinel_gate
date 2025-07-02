@@ -1,4 +1,4 @@
-.PHONY: build run test clean docker-build docker-run dev deps lint fmt vet check-security
+.PHONY: build run test clean docker-build docker-run dev deps lint fmt vet check-security test-jwt test-rate-limit test-circuit-breaker test-integration test-all
 
 # Variables
 BINARY_NAME=gateway
@@ -26,9 +26,9 @@ deps:
 	@go mod download
 	@go mod tidy
 
-# Run tests
+# Run unit tests
 test:
-	@echo "Running tests..."
+	@echo "Running unit tests..."
 	@go test -v ./...
 
 # Run tests with coverage
@@ -36,6 +36,49 @@ test-coverage:
 	@echo "Running tests with coverage..."
 	@go test -v -cover -coverprofile=coverage.out ./...
 	@go tool cover -html=coverage.out -o coverage.html
+
+# Run JWT authentication tests
+test-jwt:
+	@echo "Running JWT authentication tests..."
+	@chmod +x test-jwt.sh
+	@./test-jwt.sh
+
+# Run rate limiting tests
+test-rate-limit:
+	@echo "Running rate limiting tests..."
+	@chmod +x test-rate-limit.sh
+	@./test-rate-limit.sh
+
+# Run circuit breaker tests
+test-circuit-breaker:
+	@echo "Running circuit breaker tests..."
+	@chmod +x test-circuit-breaker.sh
+	@./test-circuit-breaker.sh
+
+# Run all integration tests (.sh scripts)
+test-integration:
+	@echo "Running all integration tests..."
+	@echo "========================================"
+	@echo "1. JWT Authentication Tests"
+	@echo "========================================"
+	@chmod +x test-jwt.sh && ./test-jwt.sh
+	@echo ""
+	@echo "========================================"
+	@echo "2. Rate Limiting Tests"
+	@echo "========================================"
+	@chmod +x test-rate-limit.sh && ./test-rate-limit.sh
+	@echo ""
+	@echo "========================================"
+	@echo "3. Circuit Breaker Tests"
+	@echo "========================================"
+	@chmod +x test-circuit-breaker.sh && ./test-circuit-breaker.sh
+	@echo ""
+	@echo "✅ All integration tests completed!"
+
+# Run ALL tests (unit + integration)
+test-all: test test-integration
+	@echo ""
+	@echo "🎉 All tests (unit + integration) completed successfully!"
 
 # Run benchmarks
 bench:
@@ -125,26 +168,41 @@ pre-commit: check build
 # Show help
 help:
 	@echo "Available commands:"
+	@echo ""
+	@echo "📦 BUILD & RUN:"
 	@echo "  build          - Build the application"
 	@echo "  run            - Run the application"
 	@echo "  dev            - Run in development mode with hot reload"
 	@echo "  deps           - Install dependencies"
-	@echo "  test           - Run tests"
-	@echo "  test-coverage  - Run tests with coverage"
-	@echo "  bench          - Run benchmarks"
+	@echo ""
+	@echo "🧪 TESTING:"
+	@echo "  test               - Run unit tests"
+	@echo "  test-coverage      - Run tests with coverage"
+	@echo "  test-jwt           - Run JWT authentication tests"
+	@echo "  test-rate-limit    - Run rate limiting tests"
+	@echo "  test-circuit-breaker - Run circuit breaker tests"
+	@echo "  test-integration   - Run all integration tests (.sh scripts)"
+	@echo "  test-all           - Run ALL tests (unit + integration)"
+	@echo "  bench              - Run benchmarks"
+	@echo ""
+	@echo "🔍 CODE QUALITY:"
 	@echo "  fmt            - Format code"
 	@echo "  vet            - Vet code"
 	@echo "  lint           - Lint code"
 	@echo "  check-security - Run security checks"
-	@echo "  clean          - Clean build artifacts"
+	@echo "  check          - Run all checks"
+	@echo "  pre-commit     - Prepare for commit"
+	@echo ""
+	@echo "🐳 DOCKER:"
 	@echo "  docker-build   - Build Docker image"
 	@echo "  docker-run     - Run Docker container"
 	@echo "  docker-stop    - Stop Docker container"
 	@echo "  up             - Start all services with docker-compose"
 	@echo "  down           - Stop all services"
 	@echo "  logs           - View logs"
+	@echo ""
+	@echo "🛠️  UTILITIES:"
 	@echo "  jwt-secret     - Generate JWT secret"
 	@echo "  install-tools  - Install development tools"
-	@echo "  check          - Run all checks"
-	@echo "  pre-commit     - Prepare for commit"
+	@echo "  clean          - Clean build artifacts"
 	@echo "  help           - Show this help" 

@@ -12,7 +12,6 @@ import (
 	"sentinel_gate/internal/server"
 	"sentinel_gate/pkg/config"
 	"sentinel_gate/pkg/logger"
-	"sentinel_gate/pkg/telemetry"
 
 	"go.uber.org/zap"
 )
@@ -31,14 +30,7 @@ func main() {
 	}
 	defer logger.Sync()
 
-	// Initialize telemetry
-	shutdown, err := telemetry.Init(cfg.Telemetry)
-	if err != nil {
-		logger.Fatal("Failed to initialize telemetry", zap.Error(err))
-	}
-	defer shutdown()
-
-	// Create and configure server
+	// Create and configure server (telemetry is initialized inside server.New)
 	srv, err := server.New(cfg, logger)
 	if err != nil {
 		logger.Fatal("Failed to create server", zap.Error(err))

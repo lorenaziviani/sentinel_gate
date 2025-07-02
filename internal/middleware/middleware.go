@@ -12,7 +12,6 @@ import (
 
 	"sentinel_gate/internal/ratelimiter"
 	"sentinel_gate/pkg/config"
-	"sentinel_gate/pkg/telemetry"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -165,21 +164,10 @@ func DetailedLogger(logger *zap.Logger) gin.HandlerFunc {
 	})
 }
 
-// Metrics middleware to collect metrics
+// This function is kept for compatibility but is now handled by Instrumentation middleware
 func Metrics() gin.HandlerFunc {
 	return gin.HandlerFunc(func(c *gin.Context) {
-		start := time.Now()
-
-		telemetry.IncrementActiveConnections(c.Request.Context())
-		defer telemetry.DecrementActiveConnections(c.Request.Context())
-
 		c.Next()
-
-		duration := time.Since(start).Seconds()
-		status := strconv.Itoa(c.Writer.Status())
-
-		telemetry.IncrementRequestCounter(c.Request.Context(), c.Request.Method, c.FullPath(), status)
-		telemetry.RecordResponseTime(c.Request.Context(), duration, c.Request.Method, c.FullPath())
 	})
 }
 

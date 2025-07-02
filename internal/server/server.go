@@ -12,6 +12,7 @@ import (
 	"sentinel_gate/internal/proxy"
 	"sentinel_gate/internal/ratelimiter"
 	"sentinel_gate/pkg/config"
+	"sentinel_gate/pkg/telemetry"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -25,6 +26,7 @@ type Server struct {
 	proxy          *proxy.Proxy
 	rateLimiter    *middleware.EnhancedRateLimiter
 	circuitBreaker *circuitbreaker.CircuitBreakerManager
+	telemetry      *telemetry.Telemetry
 }
 
 // New creates a new server instance
@@ -32,6 +34,13 @@ func New(cfg *config.Config, logger *zap.Logger) (*Server, error) {
 	if cfg.Environment == "production" {
 		gin.SetMode(gin.ReleaseMode)
 	}
+
+	tel, telShutdown, err := telemetry.Init(cfg.Telemetry, logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize telemetry: %w", err)
+	}
+
+	_ = telShutdown
 
 	circuitBreakerManager := circuitbreaker.NewCircuitBreakerManager(cfg.CircuitBreaker, logger)
 
@@ -49,6 +58,7 @@ func New(cfg *config.Config, logger *zap.Logger) (*Server, error) {
 		proxy:          proxyHandler,
 		rateLimiter:    rateLimiter,
 		circuitBreaker: circuitBreakerManager,
+		telemetry:      tel,
 	}
 
 	server.setupMiddlewares()
@@ -72,6 +82,18 @@ func (s *Server) setupMiddlewares() {
 
 	s.router.Use(middleware.DetailedLogger(s.logger))
 
+	// Add telemetry instrumentation middleware
+	instrumentationConfig := middleware.InstrumentationConfig{
+		ServiceName:    s.config.Telemetry.ServiceName,
+		ServiceVersion: s.config.Telemetry.ServiceVersion,
+		SkipPaths:      []string{"/metrics", "/health", "/ready"},
+		Logger:         s.logger,
+	}
+	s.router.Use(middleware.Instrumentation(s.telemetry, instrumentationConfig))
+	s.router.Use(middleware.AuthInstrumentation(s.telemetry))
+	s.router.Use(middleware.ProxyInstrumentation(s.telemetry))
+	s.router.Use(middleware.RateLimitInstrumentation(s.telemetry))
+
 	s.router.Use(middleware.Metrics())
 
 	s.router.Use(middleware.RequestID())
@@ -86,7 +108,9 @@ func (s *Server) setupRoutes() {
 	// Public routes (no authentication required)
 	s.router.GET("/health", s.healthCheck)
 	s.router.GET("/ready", s.readinessCheck)
-	s.router.GET("/metrics", gin.WrapH(http.DefaultServeMux))
+
+	// Prometheus metrics endpoint
+	s.router.GET("/metrics", middleware.MetricsEndpoint(s.telemetry))
 
 	// Authentication routes
 	authGroup := s.router.Group("/auth")

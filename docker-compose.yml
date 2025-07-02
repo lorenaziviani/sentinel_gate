@@ -19,6 +19,9 @@ services:
       - RATE_LIMIT_RPM=100
       - RATE_LIMIT_BURST=10
       - TELEMETRY_ENABLED=true
+      - TRACING_ENABLED=true
+      - JAEGER_ENDPOINT=http://jaeger:14268/api/traces
+      - TRACING_SAMPLE_RATE=1.0
       - PROMETHEUS_PORT=:9090
       - LOG_LEVEL=info
       - TARGET_USERS_URL=http://user-service:3001
@@ -26,6 +29,7 @@ services:
     depends_on:
       - redis
       - prometheus
+      - jaeger
     networks:
       - sentinel-network
 
@@ -58,6 +62,21 @@ services:
     networks:
       - sentinel-network
 
+  # Jaeger for distributed tracing
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "14268:14268"  # Jaeger collector
+      - "14250:14250"  # gRPC
+      - "6831:6831/udp"  # UDP
+      - "6832:6832/udp"  # UDP
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+      - COLLECTOR_ZIPKIN_HOST_PORT=:9411
+    networks:
+      - sentinel-network
+
   # Grafana for visualization
   grafana:
     image: grafana/grafana:latest
@@ -65,12 +84,14 @@ services:
       - "3000:3000"
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_FEATURE_TOGGLES_ENABLE=traceqlEditor,traceQLStreaming
     volumes:
       - grafana_data:/var/lib/grafana
       - ./configs/grafana/dashboards:/etc/grafana/provisioning/dashboards
       - ./configs/grafana/datasources:/etc/grafana/provisioning/datasources
     depends_on:
       - prometheus
+      - jaeger
     networks:
       - sentinel-network
 

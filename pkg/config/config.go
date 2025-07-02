@@ -48,11 +48,14 @@ type JWTConfig struct {
 }
 
 type TelemetryConfig struct {
-	Enabled        bool   `yaml:"enabled"`
-	PrometheusPort string `yaml:"prometheus_port"`
-	ServiceName    string `yaml:"service_name"`
-	ServiceVersion string `yaml:"service_version"`
-	Environment    string `yaml:"environment"`
+	Enabled           bool    `yaml:"enabled"`
+	PrometheusPort    string  `yaml:"prometheus_port"`
+	ServiceName       string  `yaml:"service_name"`
+	ServiceVersion    string  `yaml:"service_version"`
+	Environment       string  `yaml:"environment"`
+	TracingEnabled    bool    `yaml:"tracing_enabled"`
+	JaegerEndpoint    string  `yaml:"jaeger_endpoint"`
+	TracingSampleRate float64 `yaml:"tracing_sample_rate"`
 }
 
 type LogConfig struct {
@@ -162,11 +165,14 @@ func Load() (*Config, error) {
 			SigningMethod:  getEnv("JWT_SIGNING_METHOD", "HS256"),
 		},
 		Telemetry: TelemetryConfig{
-			Enabled:        getBoolEnv("TELEMETRY_ENABLED", true),
-			PrometheusPort: getEnv("PROMETHEUS_PORT", ":9090"),
-			ServiceName:    getEnv("SERVICE_NAME", "sentinel-gate"),
-			ServiceVersion: getEnv("SERVICE_VERSION", "1.0.0"),
-			Environment:    getEnv("TELEMETRY_ENVIRONMENT", "development"),
+			Enabled:           getBoolEnv("TELEMETRY_ENABLED", true),
+			PrometheusPort:    getEnv("PROMETHEUS_PORT", ":9090"),
+			ServiceName:       getEnv("SERVICE_NAME", "sentinel-gate"),
+			ServiceVersion:    getEnv("SERVICE_VERSION", "1.0.0"),
+			Environment:       getEnv("TELEMETRY_ENVIRONMENT", "development"),
+			TracingEnabled:    getBoolEnv("TRACING_ENABLED", true),
+			JaegerEndpoint:    getEnv("JAEGER_ENDPOINT", "http://localhost:14268/api/traces"),
+			TracingSampleRate: getFloatEnv("TRACING_SAMPLE_RATE", 1.0),
 		},
 		Log: LogConfig{
 			Level:      getEnv("LOG_LEVEL", "info"),
