@@ -1,4 +1,4 @@
-🛡️ Sentinel Gate - API Gateway
+# 🔐 Sentinel Gate - API Gateway
 
 <div align="center">
 <img src=".gitassets/cover.png" width="350" />
